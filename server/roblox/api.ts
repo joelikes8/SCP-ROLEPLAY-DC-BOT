@@ -124,10 +124,14 @@ export async function verifyUserWithCode(username: string, code: string): Promis
     const description = data.description;
     
     // Check if the description contains the verification code
-    if (!description.includes(code)) {
+    // Convert both to uppercase and remove non-alphanumeric characters for more flexible matching
+    const cleanDescription = description.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const cleanCode = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    
+    if (!cleanDescription.includes(cleanCode)) {
       return { 
         success: false, 
-        message: "Verification code not found in your profile. Please make sure you've saved it in your About section."
+        message: "Verification code not found in your profile. Please make sure you've saved it in your About section and that Roblox didn't filter it out."
       };
     }
     

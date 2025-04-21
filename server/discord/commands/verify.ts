@@ -162,7 +162,7 @@ async function handleVerifyCommand(
         { name: "Roblox ID", value: robloxUser.id.toString() },
         { 
           name: "Verification Instructions", 
-          value: "1. Go to your Roblox profile\n2. Click the pencil icon to edit your profile\n3. Paste the code below into your About section\n4. Click Save\n5. Click the **Check Verification** button below"
+          value: "1. Go to your Roblox profile\n2. Click the pencil icon to edit your profile\n3. Copy the code below\n4. Paste it into your About section\n5. If Roblox filters the code, try typing it manually without spaces\n6. Click Save\n7. Click the **Check Verification** button below"
         },
         { name: "Verification Code", value: `\`${verificationCode}\`` }
       )

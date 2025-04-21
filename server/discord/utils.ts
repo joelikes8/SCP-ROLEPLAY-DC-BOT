@@ -2,14 +2,21 @@ import crypto from "crypto";
 
 /**
  * Generate a random verification code for Roblox verification
+ * Using a format that's less likely to be filtered by Roblox
  */
 export function generateVerificationCode(): string {
-  // Generate a random string
-  const randomBytes = crypto.randomBytes(4);
-  const randomHex = randomBytes.toString("hex").toUpperCase();
+  // Use only letters to avoid Roblox filtering issues
+  // Avoiding numbers and special characters that might be filtered
+  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let result = 'VERIFY';
   
-  // Format as VERIFY-XXXXXXXX
-  return `VERIFY-${randomHex}`;
+  // Add 6 random letters
+  for (let i = 0; i < 6; i++) {
+    const randomIndex = Math.floor(Math.random() * characters.length);
+    result += characters.charAt(randomIndex);
+  }
+  
+  return result;
 }
 
 /**
