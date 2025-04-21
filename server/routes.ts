@@ -7,18 +7,22 @@ import { WebSocketServer } from "ws";
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
-  // Create WebSocket server for real-time updates
-  const wss = new WebSocketServer({ server: httpServer });
+  // Create WebSocket server for real-time updates with a specific path
+  // to avoid conflicts with Vite's HMR WebSocket
+  const wss = new WebSocketServer({ 
+    server: httpServer,
+    path: '/ws'  // Define a specific path for our WebSocket
+  });
   
   // Handle WebSocket connections
   wss.on("connection", (ws) => {
-    console.log("WebSocket client connected");
+    console.log("WebSocket client connected to /ws path");
     
     // Send initial data to the client
     sendInitialData(ws);
     
     ws.on("close", () => {
-      console.log("WebSocket client disconnected");
+      console.log("WebSocket client disconnected from /ws path");
     });
   });
   

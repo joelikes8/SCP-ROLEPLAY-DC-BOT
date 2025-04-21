@@ -20,10 +20,11 @@ export default function Home() {
   // WebSocket connection for real-time updates
   useEffect(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${window.location.host}`);
+    // Use the specific WebSocket path that matches the server configuration
+    const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     socket.onopen = () => {
-      console.log("WebSocket connected");
+      console.log("WebSocket connected to /ws path");
       setWebSocketStatus("connected");
     };
 
