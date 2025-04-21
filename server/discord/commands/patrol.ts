@@ -31,9 +31,18 @@ export async function handlePatrolInteraction(
   const guildId = interaction.guild?.id || "global";
   
   try {
-    // Log deployment environment 
-    const isRender = process.env.RENDER === 'true';
-    console.log(`Processing patrol for ${username} (${userId}) in guild ${guildId}. Environment: ${isRender ? 'Render' : 'Standard'}`);
+    // Log deployment environment and database type
+    const isRender = process.env.IS_RENDER === 'true' || process.env.RENDER === 'true';
+    const inMemoryMode = process.env.DATABASE_URL ? false : true;
+    
+    console.log(`Processing patrol for ${username} (${userId}) in guild ${guildId}.`);
+    console.log(`Environment: ${isRender ? 'Render' : 'Standard'}, Database: ${inMemoryMode ? 'In-Memory' : 'PostgreSQL'}`);
+    
+    // Verify storage is available
+    if (!storage) {
+      console.error('Storage is undefined or null in patrol command');
+      throw new Error('Storage unavailable');
+    }
     
     // Handle initial patrol command
     if (interaction.isChatInputCommand()) {
@@ -44,6 +53,7 @@ export async function handlePatrolInteraction(
     // Handle patrol buttons
     if (interaction.isButton()) {
       const customId = interaction.customId;
+      console.log(`Processing button interaction: ${customId}`);
       
       if (customId === "patrol_start") {
         await handlePatrolStart(interaction, userId, username, guildId, storage, broadcastUpdate);
@@ -61,6 +71,16 @@ export async function handlePatrolInteraction(
       console.error(`Patrol error details: ${error.message}`);
       console.error(`Error stack: ${error.stack}`);
     }
+    
+    // Log environment variables (except secrets)
+    console.log('Environment variables check:');
+    console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+    console.log(`IS_RENDER: ${process.env.IS_RENDER}`);
+    console.log(`RENDER: ${process.env.RENDER}`);
+    console.log(`DATABASE_URL exists: ${!!process.env.DATABASE_URL}`);
+    console.log(`DISCORD_TOKEN exists: ${!!process.env.DISCORD_TOKEN}`);
+    console.log(`ROBLOX_COOKIE exists: ${!!process.env.ROBLOX_COOKIE}`);
+    console.log(`PORT: ${process.env.PORT}`); 
     
     try {
       // Try to respond with error if interaction hasn't been acknowledged yet
@@ -204,60 +224,95 @@ async function handlePatrolStart(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
-  // Check for existing patrol session
-  let session = await storage.getActivePatrolSession(userId, guildId);
-  
-  if (!session) {
-    // Create a new patrol session
-    session = await storage.createPatrolSession({
-      discordUserId: userId,
-      discordGuildId: guildId,
-      status: "on_duty",
-      startTime: new Date(),
-      activeDurationSeconds: 0
-    });
+  try {
+    console.log(`Starting patrol for user ${username} (${userId}) in guild ${guildId}`);
     
-    // Send broadcast update for dashboard
-    broadcastUpdate({
-      type: "patrol_update",
-      action: "start",
-      userId,
-      username,
-      guildId,
-      session
-    });
+    // Check for existing patrol session
+    let session = await storage.getActivePatrolSession(userId, guildId);
+    console.log(`Existing session check result: ${session ? 'Session exists with status ' + session.status : 'No existing session'}`);
     
-    // Reply with success message and status
-    await interaction.update({ content: `✅ You are now on patrol duty!`, components: [] });
-    await showPatrolStatus(interaction, session, storage);
-  } else if (session.status === "paused") {
-    // Calculate the active duration
-    const now = new Date();
-    const pausedTime = session.lastPausedAt ? new Date(session.lastPausedAt) : new Date(session.startTime);
-    const previousActiveDuration = session.activeDurationSeconds || 0;
+    if (!session) {
+      console.log(`Creating new patrol session for ${username}`);
+      
+      // Create a new patrol session
+      session = await storage.createPatrolSession({
+        discordUserId: userId,
+        discordGuildId: guildId,
+        status: "on_duty",
+        startTime: new Date(),
+        activeDurationSeconds: 0
+      });
+      
+      console.log(`New session created with ID: ${session.id}`);
+      
+      // Send broadcast update for dashboard
+      console.log(`Broadcasting update for session start`);
+      broadcastUpdate({
+        type: "patrol_update",
+        action: "start",
+        userId,
+        username,
+        guildId,
+        session
+      });
+      
+      // Reply with success message and status
+      console.log(`Updating interaction with success message`);
+      await interaction.update({ content: `✅ You are now on patrol duty!`, components: [] });
+      await showPatrolStatus(interaction, session, storage);
+    } else if (session.status === "paused") {
+      console.log(`Resuming paused session ${session.id} for ${username}`);
+      
+      // Calculate the active duration
+      const now = new Date();
+      const pausedTime = session.lastPausedAt ? new Date(session.lastPausedAt) : new Date(session.startTime);
+      const previousActiveDuration = session.activeDurationSeconds || 0;
+      
+      // Update session to active
+      console.log(`Updating session to active status`);
+      const updatedSession = await storage.updatePatrolSession(session.id, {
+        status: "on_duty",
+        lastPausedAt: undefined
+      });
+      
+      // Send broadcast update
+      console.log(`Broadcasting resume update`);
+      broadcastUpdate({
+        type: "patrol_update",
+        action: "resume",
+        userId,
+        username,
+        guildId,
+        session: updatedSession
+      });
+      
+      // Show updated status
+      console.log(`Updating interaction with resume message`);
+      await interaction.update({ content: `✅ You have resumed your patrol duty!`, components: [] });
+      await showPatrolStatus(interaction, updatedSession!, storage);
+    } else {
+      // Already on duty, just update the status display
+      console.log(`User already on duty, updating status display`);
+      await showPatrolStatus(interaction, session, storage);
+    }
+  } catch (error) {
+    console.error(`Error in handlePatrolStart for ${username}:`, error);
+    if (error instanceof Error) {
+      console.error(`Error details: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
     
-    // Update session to active
-    const updatedSession = await storage.updatePatrolSession(session.id, {
-      status: "on_duty",
-      lastPausedAt: undefined
-    });
-    
-    // Send broadcast update
-    broadcastUpdate({
-      type: "patrol_update",
-      action: "resume",
-      userId,
-      username,
-      guildId,
-      session: updatedSession
-    });
-    
-    // Show updated status
-    await interaction.update({ content: `✅ You have resumed your patrol duty!`, components: [] });
-    await showPatrolStatus(interaction, updatedSession!, storage);
-  } else {
-    // Already on duty, just update the status display
-    await showPatrolStatus(interaction, session, storage);
+    // Try to respond with error if interaction isn't acknowledged
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.update({ 
+          content: "❌ An error occurred while processing your patrol start request. Please try again later.",
+          components: [] 
+        });
+      }
+    } catch (responseError) {
+      console.error("Failed to respond with error message:", responseError);
+    }
   }
 }
 
