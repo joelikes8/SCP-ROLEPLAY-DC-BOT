@@ -19,6 +19,38 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
     intents: [
       GatewayIntentBits.Guilds, // For basic guild information
     ],
+    // Adding options to make the bot more resilient
+    failIfNotExists: false,
+    rest: {
+      retries: 5, // Number of retries for REST API calls
+      timeout: 60000, // Longer timeout (60 seconds)
+    },
+    // Keep the websocket alive with extra options
+    ws: {
+      large_threshold: 250,
+      compress: true,
+    }
+  });
+
+  // Set up auto-reconnection handling
+  client.on(Events.Error, (error) => {
+    console.error(`Discord client error: ${error.message}`);
+  });
+  
+  client.on(Events.Warn, (warning) => {
+    console.warn(`Discord warning: ${warning}`);
+  });
+  
+  client.on(Events.ShardDisconnect, () => {
+    console.log("Discord bot disconnected. Attempting to reconnect...");
+  });
+  
+  client.on(Events.ShardReconnecting, () => {
+    console.log("Discord bot reconnecting...");
+  });
+  
+  client.on(Events.ShardResume, () => {
+    console.log("Discord bot reconnected successfully!");
   });
 
   // Handle ready event
@@ -96,6 +128,22 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
   // Login to Discord
   try {
     await client.login(token);
+    
+    // Set up a ping mechanism to keep the bot online
+    // This helps prevent the bot from going offline due to inactivity
+    const pingInterval = 5 * 60 * 1000; // 5 minutes
+    setInterval(() => {
+      console.log("Sending heartbeat ping to keep Discord connection alive...");
+      // Check if the client is still connected
+      if (client.isReady()) {
+        console.log(`Discord heartbeat: Bot is online as ${client.user?.tag}`);
+      } else {
+        console.warn("Discord bot appears to be offline, attempting to reconnect...");
+        client.login(token).catch(err => {
+          console.error("Failed to reconnect to Discord:", err);
+        });
+      }
+    }, pingInterval);
   } catch (error) {
     console.error("Failed to login to Discord:", error);
   }
