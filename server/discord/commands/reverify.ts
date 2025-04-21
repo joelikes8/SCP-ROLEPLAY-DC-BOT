@@ -39,7 +39,7 @@ export async function handleReverifyInteraction(
     const customId = interaction.customId;
     
     if (customId === "reverify_start") {
-      await handleReverifyStart(interaction, userId);
+      await handleReverifyStart(interaction, userId, storage);
     } else if (customId === "reverify_cancel") {
       await handleReverifyCancel(interaction);
     }
@@ -121,13 +121,34 @@ async function handleReverifyCommand(
 // Handle the start new verification button
 async function handleReverifyStart(
   interaction: ButtonInteraction,
-  userId: string
+  userId: string,
+  storage: IStorage
 ) {
-  await interaction.update({
-    content: "✅ Starting new verification process. Please use the `/verify` command with your new Roblox username.",
-    components: [],
-    embeds: []
-  });
+  try {
+    
+    // Reset the user's verification status in the database
+    await storage.updateDiscordUser(userId, {
+      isVerified: false,
+      robloxId: null,
+      robloxUsername: null,
+      verifiedAt: null
+    });
+    
+    // Notify the user
+    await interaction.update({
+      content: "✅ Starting new verification process. Your previous verification has been cleared. Please use the `/verify` command with your new Roblox username.",
+      components: [],
+      embeds: []
+    });
+    
+  } catch (error) {
+    console.error("Error resetting verification status:", error);
+    await interaction.update({
+      content: "❌ An error occurred while resetting your verification. Please try again later.",
+      components: [],
+      embeds: []
+    });
+  }
 }
 
 // Handle the cancel button
