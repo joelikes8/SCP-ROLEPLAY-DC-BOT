@@ -67,6 +67,13 @@ export async function checkDatabaseConnection(): Promise<boolean> {
   }
   
   try {
+    if (!pool) {
+      console.error('Database pool is not initialized');
+      console.log('⚠️ Falling back to in-memory mode due to missing database pool');
+      inMemoryMode = true;
+      return false;
+    }
+    
     // Try a simple query to verify connection
     const client = await pool.connect();
     try {
