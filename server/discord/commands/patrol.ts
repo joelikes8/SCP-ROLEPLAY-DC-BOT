@@ -108,15 +108,23 @@ async function handlePatrolCommand(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
-  // Check if user already has an active patrol session
-  const activeSession = await storage.getActivePatrolSession(userId, guildId);
-  
-  if (activeSession) {
-    // User has an active session, show current status
-    await showPatrolStatus(interaction, activeSession, storage);
-  } else {
-    // No active session, show the initial patrol buttons
-    await showPatrolButtons(interaction, userId, username);
+  try {
+    console.log(`Processing slash command /patrol for ${username}`);
+    
+    // Check if user already has an active patrol session
+    const activeSession = await storage.getActivePatrolSession(userId, guildId);
+    console.log(`Active session check result: ${activeSession ? 'Session exists with status ' + activeSession.status : 'No active session'}`);
+    
+    if (activeSession) {
+      // User has an active session, show current status
+      await showPatrolStatus(interaction, activeSession, storage);
+    } else {
+      // No active session, show the initial patrol buttons
+      await showPatrolButtons(interaction, userId, username);
+    }
+  } catch (error) {
+    console.error(`Error in handlePatrolCommand for ${username}:`, error);
+    throw error; // Let the parent function handle the error response
   }
 }
 
@@ -126,57 +134,68 @@ async function showPatrolStatus(
   session: any,
   storage: IStorage
 ) {
-  const status = session.status;
-  const startTime = new Date(session.startTime);
-  const now = new Date();
-  
-  // Calculate duration based on status
-  let durationInSeconds = 0;
-  
-  if (status === "on_duty") {
-    // For active duty: current active time = (now - start time) + any previous active time
-    durationInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000) + 
-      (session.activeDurationSeconds || 0);
-  } else if (status === "paused") {
-    // For paused: show the stored active duration
-    durationInSeconds = session.activeDurationSeconds || 0;
-  }
-  
-  // Create status embed
-  const embed = new EmbedBuilder()
-    .setColor(status === "on_duty" ? 0x57F287 : status === "paused" ? 0xFEE75C : 0xED4245)
-    .setTitle("Patrol Status")
-    .setDescription(`<@${session.discordUserId}>'s patrol session`)
-    .addFields(
-      { name: "Status", value: status === "on_duty" ? "🟢 On Duty" : status === "paused" ? "🟡 Paused" : "🔴 Off Duty" },
-      { name: "Started At", value: `<t:${Math.floor(startTime.getTime() / 1000)}:F>` },
-      { name: "Duration", value: formatDuration(durationInSeconds) }
-    )
-    .setTimestamp();
-  
-  // Create action row with buttons
-  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId("patrol_start")
-      .setLabel("Start")
-      .setStyle(ButtonStyle.Success)
-      .setDisabled(status === "on_duty"),
-    new ButtonBuilder()
-      .setCustomId("patrol_pause")
-      .setLabel("Pause")
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(status === "paused"),
-    new ButtonBuilder()
-      .setCustomId("patrol_off_duty")
-      .setLabel("Off Duty")
-      .setStyle(ButtonStyle.Danger)
-  );
-  
-  // Reply or update the message
-  if (interaction.replied) {
-    await interaction.editReply({ embeds: [embed], components: [buttons] });
-  } else {
-    await interaction.reply({ embeds: [embed], components: [buttons] });
+  try {
+    console.log(`Showing patrol status for session ID: ${session.id}`);
+    
+    const status = session.status;
+    const startTime = new Date(session.startTime);
+    const now = new Date();
+    
+    // Calculate duration based on status
+    let durationInSeconds = 0;
+    
+    if (status === "on_duty") {
+      // For active duty: current active time = (now - start time) + any previous active time
+      durationInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000) + 
+        (session.activeDurationSeconds || 0);
+    } else if (status === "paused") {
+      // For paused: show the stored active duration
+      durationInSeconds = session.activeDurationSeconds || 0;
+    }
+    
+    console.log(`Calculated duration: ${durationInSeconds} seconds`);
+    
+    // Create status embed
+    const embed = new EmbedBuilder()
+      .setColor(status === "on_duty" ? 0x57F287 : status === "paused" ? 0xFEE75C : 0xED4245)
+      .setTitle("Patrol Status")
+      .setDescription(`<@${session.discordUserId}>'s patrol session`)
+      .addFields(
+        { name: "Status", value: status === "on_duty" ? "🟢 On Duty" : status === "paused" ? "🟡 Paused" : "🔴 Off Duty" },
+        { name: "Started At", value: `<t:${Math.floor(startTime.getTime() / 1000)}:F>` },
+        { name: "Duration", value: formatDuration(durationInSeconds) }
+      )
+      .setTimestamp();
+    
+    // Create action row with buttons
+    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId("patrol_start")
+        .setLabel("Start")
+        .setStyle(ButtonStyle.Success)
+        .setDisabled(status === "on_duty"),
+      new ButtonBuilder()
+        .setCustomId("patrol_pause")
+        .setLabel("Pause")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(status === "paused"),
+      new ButtonBuilder()
+        .setCustomId("patrol_off_duty")
+        .setLabel("Off Duty")
+        .setStyle(ButtonStyle.Danger)
+    );
+    
+    // Reply or update the message
+    if (interaction.replied) {
+      console.log(`Updating existing reply with status embed`);
+      await interaction.editReply({ embeds: [embed], components: [buttons] });
+    } else {
+      console.log(`Sending initial reply with status embed`);
+      await interaction.reply({ embeds: [embed], components: [buttons] });
+    }
+  } catch (error) {
+    console.error(`Error showing patrol status:`, error);
+    throw error; // Let the parent function handle the error response
   }
 }
 
@@ -186,33 +205,41 @@ async function showPatrolButtons(
   userId: string, 
   username: string
 ) {
-  // Create embed for patrol options
-  const embed = new EmbedBuilder()
-    .setColor(0x5865F2)
-    .setTitle("Patrol Management")
-    .setDescription(`<@${userId}>, select your patrol status:`)
-    .setTimestamp();
-  
-  // Create buttons
-  const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId("patrol_start")
-      .setLabel("Start")
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId("patrol_pause")
-      .setLabel("Pause")
-      .setStyle(ButtonStyle.Primary)
-      .setDisabled(true),
-    new ButtonBuilder()
-      .setCustomId("patrol_off_duty")
-      .setLabel("Off Duty")
-      .setStyle(ButtonStyle.Danger)
-      .setDisabled(true)
-  );
-  
-  // Reply with the embed and buttons
-  await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
+  try {
+    console.log(`Showing initial patrol buttons for ${username}`);
+    
+    // Create embed for patrol options
+    const embed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle("Patrol Management")
+      .setDescription(`<@${userId}>, select your patrol status:`)
+      .setTimestamp();
+    
+    // Create buttons
+    const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId("patrol_start")
+        .setLabel("Start")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("patrol_pause")
+        .setLabel("Pause")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId("patrol_off_duty")
+        .setLabel("Off Duty")
+        .setStyle(ButtonStyle.Danger)
+        .setDisabled(true)
+    );
+    
+    // Reply with the embed and buttons
+    await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: true });
+    console.log(`Initial patrol buttons displayed`);
+  } catch (error) {
+    console.error(`Error showing patrol buttons:`, error);
+    throw error; // Let the parent function handle the error response
+  }
 }
 
 // Handle start patrol button
@@ -313,6 +340,8 @@ async function handlePatrolStart(
     } catch (responseError) {
       console.error("Failed to respond with error message:", responseError);
     }
+    
+    throw error; // Re-throw to let parent error handler log environment variables
   }
 }
 
@@ -325,46 +354,75 @@ async function handlePatrolPause(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
-  // Get active patrol session
-  const session = await storage.getActivePatrolSession(userId, guildId);
-  
-  if (!session) {
-    await interaction.reply({ content: `❌ You don't have an active patrol session.`, ephemeral: true });
-    return;
-  }
-  
-  if (session.status === "on_duty") {
-    const now = new Date();
-    const startTime = new Date(session.startTime);
-    const activeDuration = session.activeDurationSeconds || 0;
+  try {
+    console.log(`Pausing patrol for user ${username} in guild ${guildId}`);
     
-    // Calculate additional active time since last update
-    const additionalActiveTime = Math.floor((now.getTime() - 
-      (session.lastPausedAt ? new Date(session.lastPausedAt).getTime() : startTime.getTime())) / 1000);
+    // Get active patrol session
+    const session = await storage.getActivePatrolSession(userId, guildId);
     
-    // Update session to paused
-    const updatedSession = await storage.updatePatrolSession(session.id, {
-      status: "paused",
-      activeDurationSeconds: activeDuration + additionalActiveTime,
-      lastPausedAt: now
-    });
+    if (!session) {
+      console.log(`No active session found for ${username}`);
+      await interaction.reply({ content: `❌ You don't have an active patrol session.`, ephemeral: true });
+      return;
+    }
     
-    // Send broadcast update
-    broadcastUpdate({
-      type: "patrol_update",
-      action: "pause",
-      userId,
-      username,
-      guildId,
-      session: updatedSession
-    });
+    console.log(`Found session with ID ${session.id} and status ${session.status}`);
     
-    // Show updated status
-    await interaction.update({ content: `⏸️ Your patrol duty has been paused!`, components: [] });
-    await showPatrolStatus(interaction, updatedSession!, storage);
-  } else {
-    // Already paused, just update the status display
-    await showPatrolStatus(interaction, session, storage);
+    if (session.status === "on_duty") {
+      const now = new Date();
+      const startTime = new Date(session.startTime);
+      const activeDuration = session.activeDurationSeconds || 0;
+      
+      // Calculate additional active time since last update
+      const additionalActiveTime = Math.floor((now.getTime() - 
+        (session.lastPausedAt ? new Date(session.lastPausedAt).getTime() : startTime.getTime())) / 1000);
+      
+      console.log(`Calculated additional active time: ${additionalActiveTime} seconds`);
+      
+      // Update session to paused
+      console.log(`Updating session to paused status`);
+      const updatedSession = await storage.updatePatrolSession(session.id, {
+        status: "paused",
+        activeDurationSeconds: activeDuration + additionalActiveTime,
+        lastPausedAt: now
+      });
+      
+      // Send broadcast update
+      console.log(`Broadcasting pause update`);
+      broadcastUpdate({
+        type: "patrol_update",
+        action: "pause",
+        userId,
+        username,
+        guildId,
+        session: updatedSession
+      });
+      
+      // Show updated status
+      console.log(`Updating interaction with pause message`);
+      await interaction.update({ content: `⏸️ Your patrol duty has been paused!`, components: [] });
+      await showPatrolStatus(interaction, updatedSession!, storage);
+    } else {
+      // Already paused, just update the status display
+      console.log(`Session already paused, just updating display`);
+      await showPatrolStatus(interaction, session, storage);
+    }
+  } catch (error) {
+    console.error(`Error in handlePatrolPause for ${username}:`, error);
+    
+    // Try to respond with error if interaction isn't acknowledged
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.update({ 
+          content: "❌ An error occurred while pausing your patrol. Please try again later.",
+          components: [] 
+        });
+      }
+    } catch (responseError) {
+      console.error("Failed to respond with error message:", responseError);
+    }
+    
+    throw error; // Re-throw to let parent error handler log environment variables
   }
 }
 
@@ -377,60 +435,88 @@ async function handlePatrolOffDuty(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
-  // Get active patrol session
-  const session = await storage.getActivePatrolSession(userId, guildId);
-  
-  if (!session) {
-    await interaction.reply({ content: `❌ You don't have an active patrol session.`, ephemeral: true });
-    return;
+  try {
+    console.log(`Setting off duty for user ${username} in guild ${guildId}`);
+    
+    // Get active patrol session
+    const session = await storage.getActivePatrolSession(userId, guildId);
+    
+    if (!session) {
+      console.log(`No active session found for ${username}`);
+      await interaction.reply({ content: `❌ You don't have an active patrol session.`, ephemeral: true });
+      return;
+    }
+    
+    console.log(`Found session with ID ${session.id} and status ${session.status}`);
+    
+    const now = new Date();
+    const startTime = new Date(session.startTime);
+    
+    // Calculate total duration based on status
+    let totalDuration = 0;
+    
+    if (session.status === "on_duty") {
+      // For active duty: total time = (now - start time) + any previous active time
+      totalDuration = Math.floor((now.getTime() - startTime.getTime()) / 1000) + 
+        (session.activeDurationSeconds || 0);
+    } else if (session.status === "paused") {
+      // For paused: use the stored active duration
+      totalDuration = session.activeDurationSeconds || 0;
+    }
+    
+    console.log(`Calculated total duration: ${totalDuration} seconds`);
+    
+    // Update session to off duty
+    console.log(`Updating session to off duty status`);
+    const updatedSession = await storage.updatePatrolSession(session.id, {
+      status: "off_duty",
+      endTime: now,
+      totalDurationSeconds: totalDuration
+    });
+    
+    // Send broadcast update
+    console.log(`Broadcasting off duty update`);
+    broadcastUpdate({
+      type: "patrol_update",
+      action: "end",
+      userId,
+      username,
+      guildId,
+      session: updatedSession
+    });
+    
+    // Create completion embed
+    const embed = new EmbedBuilder()
+      .setColor(0xED4245)
+      .setTitle("Patrol Completed")
+      .setDescription(`<@${userId}> has completed their patrol duty.`)
+      .addFields(
+        { name: "Status", value: "🔴 Off Duty" },
+        { name: "Started At", value: `<t:${Math.floor(startTime.getTime() / 1000)}:F>` },
+        { name: "Ended At", value: `<t:${Math.floor(now.getTime() / 1000)}:F>` },
+        { name: "Total Patrol Time", value: formatDuration(totalDuration) }
+      )
+      .setTimestamp();
+    
+    // Send completion message
+    console.log(`Sending completion message`);
+    await interaction.update({ content: `✅ You have gone off duty!`, components: [] });
+    await interaction.followUp({ embeds: [embed] });
+  } catch (error) {
+    console.error(`Error in handlePatrolOffDuty for ${username}:`, error);
+    
+    // Try to respond with error if interaction isn't acknowledged
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.update({ 
+          content: "❌ An error occurred while going off duty. Please try again later.",
+          components: [] 
+        });
+      }
+    } catch (responseError) {
+      console.error("Failed to respond with error message:", responseError);
+    }
+    
+    throw error; // Re-throw to let parent error handler log environment variables
   }
-  
-  const now = new Date();
-  const startTime = new Date(session.startTime);
-  
-  // Calculate total duration based on status
-  let totalDuration = 0;
-  
-  if (session.status === "on_duty") {
-    // For active duty: total time = (now - start time) + any previous active time
-    totalDuration = Math.floor((now.getTime() - startTime.getTime()) / 1000) + 
-      (session.activeDurationSeconds || 0);
-  } else if (session.status === "paused") {
-    // For paused: use the stored active duration
-    totalDuration = session.activeDurationSeconds || 0;
-  }
-  
-  // Update session to off duty
-  const updatedSession = await storage.updatePatrolSession(session.id, {
-    status: "off_duty",
-    endTime: now,
-    totalDurationSeconds: totalDuration
-  });
-  
-  // Send broadcast update
-  broadcastUpdate({
-    type: "patrol_update",
-    action: "end",
-    userId,
-    username,
-    guildId,
-    session: updatedSession
-  });
-  
-  // Create completion embed
-  const embed = new EmbedBuilder()
-    .setColor(0xED4245)
-    .setTitle("Patrol Completed")
-    .setDescription(`<@${userId}> has completed their patrol duty.`)
-    .addFields(
-      { name: "Status", value: "🔴 Off Duty" },
-      { name: "Started At", value: `<t:${Math.floor(startTime.getTime() / 1000)}:F>` },
-      { name: "Ended At", value: `<t:${Math.floor(now.getTime() / 1000)}:F>` },
-      { name: "Total Patrol Time", value: formatDuration(totalDuration) }
-    )
-    .setTimestamp();
-  
-  // Send completion message
-  await interaction.update({ content: `✅ You have gone off duty!`, components: [] });
-  await interaction.followUp({ embeds: [embed] });
 }
