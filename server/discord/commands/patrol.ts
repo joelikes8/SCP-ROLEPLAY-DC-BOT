@@ -31,12 +31,14 @@ export async function handlePatrolInteraction(
   const guildId = interaction.guild?.id || "global";
   
   try {
-    // Log deployment environment and database type
+    // Log deployment environment and database type with more details
     const isRender = process.env.IS_RENDER === 'true' || process.env.RENDER === 'true';
     const inMemoryMode = process.env.DATABASE_URL ? false : true;
+    const nodeEnv = process.env.NODE_ENV || 'undefined';
     
     console.log(`Processing patrol for ${username} (${userId}) in guild ${guildId}.`);
-    console.log(`Environment: ${isRender ? 'Render' : 'Standard'}, Database: ${inMemoryMode ? 'In-Memory' : 'PostgreSQL'}`);
+    console.log(`Environment: ${nodeEnv} (Render: ${isRender ? 'Yes' : 'No'}), Database: ${inMemoryMode ? 'In-Memory' : 'PostgreSQL'}`);
+    console.log(`Interaction type: ${interaction.isButton() ? 'Button' : interaction.isChatInputCommand() ? 'Command' : 'Other'}`);
     
     // Verify storage is available
     if (!storage) {
@@ -44,16 +46,23 @@ export async function handlePatrolInteraction(
       throw new Error('Storage unavailable');
     }
     
-    // Handle initial patrol command
+    // Handle initial patrol command with additional validation
     if (interaction.isChatInputCommand()) {
+      console.log(`Processing patrol command with options:`, interaction.options);
       await handlePatrolCommand(interaction, userId, username, guildId, storage, broadcastUpdate);
       return;
     }
     
-    // Handle patrol buttons
+    // Handle patrol buttons with improved error handling
     if (interaction.isButton()) {
       const customId = interaction.customId;
       console.log(`Processing button interaction: ${customId}`);
+      
+      // Validate the button customId more thoroughly
+      if (!customId || typeof customId !== 'string') {
+        console.error(`Invalid customId for button interaction: ${JSON.stringify(customId)}`);
+        throw new Error('Invalid button customId');
+      }
       
       if (customId === "patrol_start") {
         await handlePatrolStart(interaction, userId, username, guildId, storage, broadcastUpdate);
@@ -61,6 +70,12 @@ export async function handlePatrolInteraction(
         await handlePatrolPause(interaction, userId, username, guildId, storage, broadcastUpdate);
       } else if (customId === "patrol_off_duty") {
         await handlePatrolOffDuty(interaction, userId, username, guildId, storage, broadcastUpdate);
+      } else {
+        console.warn(`Unrecognized patrol button customId: ${customId}`);
+        await interaction.reply({ 
+          content: "⚠️ Unrecognized patrol button. Please try again or use the /patrol command.", 
+          ephemeral: true 
+        });
       }
     }
   } catch (error) {

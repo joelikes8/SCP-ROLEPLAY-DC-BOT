@@ -38,6 +38,21 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Check environment and set environment flags
+  const isRender = process.env.RENDER === 'true' || process.env.IS_RENDER === 'true' || !!process.env.RENDER_EXTERNAL_URL;
+  if (isRender) {
+    console.log("Environment: Render");
+    // Set the RENDER and IS_RENDER environment variables for consistency
+    process.env.RENDER = 'true';
+    process.env.IS_RENDER = 'true';
+  } else {
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  }
+  
+  // Log if we're using in-memory or database mode
+  const inMemoryMode = !process.env.DATABASE_URL;
+  console.log(`Using database connection: ${inMemoryMode ? 'No (in-memory mode)' : 'Yes (URL defined)'}`);
+  
   // Check database connection first
   try {
     const { checkDatabaseConnection } = await import("./db");

@@ -52,12 +52,57 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
   client.once(Events.ClientReady, async (c) => {
     console.log(`Discord bot ready! Logged in as ${c.user.tag}`);
     
-    try {
-      // Register slash commands with Discord
-      await registerCommands(c.user.id);
-      console.log("Slash commands registered successfully!");
-    } catch (error) {
-      console.error("Error registering commands:", error);
+    // Check if we're running in Render
+    const isRender = process.env.RENDER === 'true' || process.env.IS_RENDER === 'true' || !!process.env.RENDER_EXTERNAL_URL;
+    
+    // On Render, introduce a delay before registering commands to ensure the connection is stable
+    if (isRender) {
+      console.log("Running on Render - delaying slash command registration for 5 seconds to ensure connection stability...");
+      setTimeout(async () => {
+        try {
+          await registerCommands(c.user.id);
+          console.log("Slash commands registered successfully on Render!");
+          
+          // Optional: Verify command registration after a short delay
+          setTimeout(async () => {
+            try {
+              // Fetch registered commands to verify registration
+              const rest = new REST({ version: '10' }).setToken(token as string);
+              const commands = await rest.get(
+                Routes.applicationCommands(c.user.id)
+              ) as any[];
+              
+              console.log(`Command verification: ${commands.length} commands found on Discord`);
+              commands.forEach(cmd => {
+                console.log(`- Registered command: ${cmd.name}`);
+              });
+            } catch (verifyError) {
+              console.error("Failed to verify command registration:", verifyError);
+            }
+          }, 5000);
+        } catch (error) {
+          console.error("Error registering commands on Render:", error);
+          
+          // In case of failure, try one more time after a longer delay
+          console.log("Retrying command registration in 30 seconds...");
+          setTimeout(async () => {
+            try {
+              await registerCommands(c.user.id);
+              console.log("Slash commands registered successfully on retry!");
+            } catch (retryError) {
+              console.error("Command registration retry failed:", retryError);
+            }
+          }, 30000);
+        }
+      }, 5000);
+    } else {
+      // For local development, register commands immediately
+      try {
+        await registerCommands(c.user.id);
+        console.log("Slash commands registered successfully!");
+      } catch (error) {
+        console.error("Error registering commands:", error);
+      }
     }
   });
 
@@ -113,11 +158,39 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
     // Token is checked at the beginning of the function
     const rest = new REST({ version: '10' }).setToken(token as string);
     
-    // Register commands globally (for all guilds)
-    await rest.put(
-      Routes.applicationCommands(clientId),
-      { body: commands }
-    );
+    try {
+      console.log(`Starting to refresh application (/) commands for bot ID: ${clientId}`);
+      
+      // Register commands globally (for all guilds)
+      const data = await rest.put(
+        Routes.applicationCommands(clientId),
+        { body: commands }
+      );
+      
+      // Log success with more details
+      console.log(`Successfully registered ${Array.isArray(data) ? data.length : 'unknown number of'} application commands globally`);
+      console.log(`Command registration details: ${JSON.stringify(commands.map(cmd => ({ name: cmd.name, description: cmd.description })))}`);
+    } catch (error) {
+      // Enhanced error logging
+      console.error('Failed to register application commands:', error);
+      
+      // Additional debug information
+      if (error instanceof Error) {
+        console.error(`Error details: ${error.message}`);
+        console.error(`Error stack: ${error.stack}`);
+        
+        // Check for common Discord API errors
+        if (error.message.includes('Missing Access') || error.message.includes('Missing Permissions')) {
+          console.error('This error suggests the bot token may not have the correct scopes or permissions.');
+          console.error('Make sure your bot has the applications.commands scope in the Discord Developer Portal.');
+        }
+        
+        if (error.message.includes('Invalid Form Body')) {
+          console.error('This error suggests an issue with the command structure.');
+          console.error('Command data:', JSON.stringify(commands));
+        }
+      }
+    }
   }
 
   // Login to Discord
