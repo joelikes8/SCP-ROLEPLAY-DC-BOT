@@ -64,25 +64,59 @@ async function handleVerifyCommand(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
+  // First defer the reply to prevent interaction timeout
+  await interaction.deferReply({ ephemeral: true });
+  
   try {
     // Check if user is already verified
     const existingUser = await storage.getDiscordUserByDiscordId(userId);
     
     if (existingUser && existingUser.isVerified) {
-      await interaction.reply({
-        content: `❌ You are already verified as **${existingUser.robloxUsername}**. Use \`/reverify\` if you need to verify with a different account.`,
-        ephemeral: true
+      await interaction.editReply({
+        content: `❌ You are already verified as **${existingUser.robloxUsername}**. Use \`/reverify\` if you need to verify with a different account.`
       });
       return;
     }
     
-    // Check if the Roblox username exists
-    const robloxUser = await getRobloxUserByUsername(robloxUsername);
+    // Inform user that we're processing their request
+    await interaction.editReply({
+      content: `🔍 Looking up Roblox user **${robloxUsername}**... This might take a moment due to Roblox API limits.`
+    });
+    
+    // Check if the Roblox username exists with better error handling
+    let robloxUser = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (!robloxUser && retryCount < maxRetries) {
+      try {
+        robloxUser = await getRobloxUserByUsername(robloxUsername);
+        
+        if (!robloxUser && retryCount < maxRetries - 1) {
+          retryCount++;
+          await interaction.editReply({
+            content: `🔄 Retry ${retryCount}/${maxRetries}: Looking up Roblox user **${robloxUsername}**...`
+          });
+          // Wait longer between retries (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+        }
+      } catch (err) {
+        console.error(`Error on retry ${retryCount}:`, err);
+        retryCount++;
+        
+        if (retryCount < maxRetries) {
+          await interaction.editReply({
+            content: `⚠️ Encountered an error. Retry ${retryCount}/${maxRetries}: Looking up Roblox user **${robloxUsername}**...`
+          });
+          // Wait longer between retries
+          await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+        }
+      }
+    }
     
     if (!robloxUser) {
-      await interaction.reply({
-        content: `❌ Could not find a Roblox user with the username **${robloxUsername}**. Please check the spelling and try again.`,
-        ephemeral: true
+      await interaction.editReply({
+        content: `❌ Could not find a Roblox user with the username **${robloxUsername}** after ${maxRetries} attempts. Please check the spelling and try again later.`
       });
       return;
     }
@@ -152,17 +186,16 @@ async function handleVerifyCommand(
     );
     
     // Reply with verification instructions
-    await interaction.reply({
+    await interaction.editReply({
+      content: "✅ Found Roblox user! Please follow these instructions:",
       embeds: [embed],
-      components: [buttons],
-      ephemeral: true
+      components: [buttons]
     });
     
   } catch (error) {
     console.error("Error handling verify command:", error);
-    await interaction.reply({
-      content: "❌ An error occurred while processing your verification. Please try again later.",
-      ephemeral: true
+    await interaction.editReply({
+      content: "❌ An error occurred while processing your verification. Please try again later."
     });
   }
 }
@@ -176,37 +209,90 @@ async function handleVerifyCheck(
   storage: IStorage,
   broadcastUpdate: Function
 ) {
+  // Defer update to prevent interaction timeout
+  await interaction.deferUpdate();
+  
   try {
-    // Get the latest verification attempt
+    // First, get the latest verification attempt
     const attempt = await storage.getLatestVerificationAttempt(userId);
     
     if (!attempt) {
-      await interaction.reply({
+      await interaction.editReply({
         content: "❌ No verification attempt found. Please use `/verify` to start the verification process.",
-        ephemeral: true
+        components: [],
+        embeds: []
       });
       return;
     }
     
-    // Check if the user has the code in their profile
-    const { robloxUsername, verificationCode } = attempt;
-    const verificationResult = await verifyUserWithCode(robloxUsername, verificationCode);
+    // Update user on status
+    await interaction.editReply({
+      content: `🔍 Checking your Roblox profile for verification code... This might take a moment due to Roblox API limits.`,
+      components: [],
+      embeds: []
+    });
     
-    if (!verificationResult.success) {
-      await interaction.update({
-        content: `❌ Verification failed: ${verificationResult.message || "Code not found in your profile."}`,
-        components: [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder()
-              .setCustomId("verify_check")
-              .setLabel("Check Again")
-              .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-              .setCustomId("verify_cancel")
-              .setLabel("Cancel")
-              .setStyle(ButtonStyle.Danger)
-          )
-        ],
+    // Check if the user has the code in their profile with retries
+    const { robloxUsername, verificationCode } = attempt;
+    let verificationResult = null;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        if (retryCount > 0) {
+          await interaction.editReply({
+            content: `🔄 Retry ${retryCount}/${maxRetries}: Checking your Roblox profile...`,
+            components: [],
+            embeds: []
+          });
+        }
+        
+        verificationResult = await verifyUserWithCode(robloxUsername, verificationCode);
+        
+        if (verificationResult.success) {
+          break;
+        } else if (retryCount < maxRetries - 1) {
+          retryCount++;
+          // Wait longer between retries (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+        } else {
+          break;
+        }
+      } catch (err) {
+        console.error(`Error on verification retry ${retryCount}:`, err);
+        retryCount++;
+        
+        if (retryCount < maxRetries) {
+          await interaction.editReply({
+            content: `⚠️ Encountered an error. Retry ${retryCount}/${maxRetries}: Checking your Roblox profile...`,
+            components: [],
+            embeds: []
+          });
+          // Wait longer between retries
+          await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+        } else {
+          break;
+        }
+      }
+    }
+    
+    // If after all retries, we failed or no result
+    if (!verificationResult || !verificationResult.success) {
+      const failButtons = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId("verify_check")
+          .setLabel("Check Again")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId("verify_cancel")
+          .setLabel("Cancel")
+          .setStyle(ButtonStyle.Danger)
+      );
+      
+      await interaction.editReply({
+        content: `❌ Verification failed: ${verificationResult?.message || "Code not found in your profile after multiple attempts."}`,
+        components: [failButtons],
         embeds: []
       });
       return;
@@ -258,15 +344,17 @@ async function handleVerifyCheck(
       .setDescription(`<@${userId}> has been verified successfully!`)
       .addFields(
         { name: "Roblox Username", value: robloxUsername },
-        { name: "Roblox ID", value: verificationResult.robloxId },
+        { name: "Roblox ID", value: verificationResult.robloxId || "Unknown" },
         { name: "Discord Nickname", value: nicknameUpdateResult }
       )
       .setTimestamp();
     
     // Add Roblox avatar if available
-    const avatarUrl = await getRobloxAvatar(verificationResult.robloxId);
-    if (avatarUrl) {
-      successEmbed.setThumbnail(avatarUrl);
+    if (verificationResult.robloxId) {
+      const avatarUrl = await getRobloxAvatar(verificationResult.robloxId);
+      if (avatarUrl) {
+        successEmbed.setThumbnail(avatarUrl);
+      }
     }
     
     // Send broadcast update
