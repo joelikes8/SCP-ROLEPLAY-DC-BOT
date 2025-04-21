@@ -35,21 +35,50 @@ export async function handleVerifyInteraction(
   const username = interaction.user.username;
   const guildId = interaction.guild?.id || "global";
   
-  // Handle initial verify command
-  if (interaction.isChatInputCommand()) {
-    const robloxUsername = interaction.options.getString("username", true);
-    await handleVerifyCommand(interaction, userId, username, guildId, robloxUsername, storage, broadcastUpdate);
-    return;
-  }
-  
-  // Handle verify buttons
-  if (interaction.isButton()) {
-    const customId = interaction.customId;
+  try {
+    // Log deployment environment
+    const isRender = process.env.RENDER === 'true';
+    console.log(`Processing verification for ${username} (${userId}) in guild ${guildId}. Environment: ${isRender ? 'Render' : 'Standard'}`);
     
-    if (customId === "verify_check") {
-      await handleVerifyCheck(interaction, userId, username, guildId, storage, broadcastUpdate);
-    } else if (customId === "verify_cancel") {
-      await handleVerifyCancel(interaction, userId, storage);
+    // Handle initial verify command
+    if (interaction.isChatInputCommand()) {
+      const robloxUsername = interaction.options.getString("username", true);
+      await handleVerifyCommand(interaction, userId, username, guildId, robloxUsername, storage, broadcastUpdate);
+      return;
+    }
+    
+    // Handle verify buttons
+    if (interaction.isButton()) {
+      const customId = interaction.customId;
+      
+      if (customId === "verify_check") {
+        await handleVerifyCheck(interaction, userId, username, guildId, storage, broadcastUpdate);
+      } else if (customId === "verify_cancel") {
+        await handleVerifyCancel(interaction, userId, storage);
+      }
+    }
+  } catch (error) {
+    console.error("Critical error in handleVerifyInteraction:", error);
+    
+    // Detailed error logging for debugging
+    if (error instanceof Error) {
+      console.error(`Verification error details: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+    
+    try {
+      // Try to respond with error if interaction hasn't been acknowledged yet
+      if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+        await interaction.reply({ 
+          content: "❌ An error occurred while processing your verification. Please try again later.",
+          ephemeral: true 
+        });
+      } else if (interaction.isRepliable() && interaction.deferred && !interaction.replied) {
+        await interaction.editReply("❌ An error occurred while processing your verification. Please try again later.");
+      }
+    } catch (responseError) {
+      // If we can't respond to the interaction (might be timed out)
+      console.error("Failed to respond to interaction with error message:", responseError);
     }
   }
 }

@@ -30,22 +30,51 @@ export async function handlePatrolInteraction(
   const username = interaction.user.username;
   const guildId = interaction.guild?.id || "global";
   
-  // Handle initial patrol command
-  if (interaction.isChatInputCommand()) {
-    await handlePatrolCommand(interaction, userId, username, guildId, storage, broadcastUpdate);
-    return;
-  }
-  
-  // Handle patrol buttons
-  if (interaction.isButton()) {
-    const customId = interaction.customId;
+  try {
+    // Log deployment environment 
+    const isRender = process.env.RENDER === 'true';
+    console.log(`Processing patrol for ${username} (${userId}) in guild ${guildId}. Environment: ${isRender ? 'Render' : 'Standard'}`);
     
-    if (customId === "patrol_start") {
-      await handlePatrolStart(interaction, userId, username, guildId, storage, broadcastUpdate);
-    } else if (customId === "patrol_pause") {
-      await handlePatrolPause(interaction, userId, username, guildId, storage, broadcastUpdate);
-    } else if (customId === "patrol_off_duty") {
-      await handlePatrolOffDuty(interaction, userId, username, guildId, storage, broadcastUpdate);
+    // Handle initial patrol command
+    if (interaction.isChatInputCommand()) {
+      await handlePatrolCommand(interaction, userId, username, guildId, storage, broadcastUpdate);
+      return;
+    }
+    
+    // Handle patrol buttons
+    if (interaction.isButton()) {
+      const customId = interaction.customId;
+      
+      if (customId === "patrol_start") {
+        await handlePatrolStart(interaction, userId, username, guildId, storage, broadcastUpdate);
+      } else if (customId === "patrol_pause") {
+        await handlePatrolPause(interaction, userId, username, guildId, storage, broadcastUpdate);
+      } else if (customId === "patrol_off_duty") {
+        await handlePatrolOffDuty(interaction, userId, username, guildId, storage, broadcastUpdate);
+      }
+    }
+  } catch (error) {
+    console.error("Critical error in handlePatrolInteraction:", error);
+    
+    // Detailed error logging for debugging
+    if (error instanceof Error) {
+      console.error(`Patrol error details: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+    
+    try {
+      // Try to respond with error if interaction hasn't been acknowledged yet
+      if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+        await interaction.reply({ 
+          content: "❌ An error occurred while processing your patrol. Please try again later.",
+          ephemeral: true 
+        });
+      } else if (interaction.isRepliable() && interaction.deferred && !interaction.replied) {
+        await interaction.editReply("❌ An error occurred while processing your patrol. Please try again later.");
+      }
+    } catch (responseError) {
+      // If we can't respond to the interaction (might be timed out)
+      console.error("Failed to respond to interaction with error message:", responseError);
     }
   }
 }
@@ -210,7 +239,7 @@ async function handlePatrolStart(
     // Update session to active
     const updatedSession = await storage.updatePatrolSession(session.id, {
       status: "on_duty",
-      lastPausedAt: null
+      lastPausedAt: undefined
     });
     
     // Send broadcast update
