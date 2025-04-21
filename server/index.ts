@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { setupRenderKeepAlive } from "./render-keep-alive";
 
 const app = express();
 app.use(express.json());
@@ -66,5 +67,11 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    // Setup Render keep-alive service if we're in production
+    if (process.env.NODE_ENV === 'production') {
+      setupRenderKeepAlive();
+      log('Render keep-alive service initialized');
+    }
   });
 })();

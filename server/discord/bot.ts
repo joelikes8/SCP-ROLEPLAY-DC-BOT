@@ -24,11 +24,6 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
     rest: {
       retries: 5, // Number of retries for REST API calls
       timeout: 60000, // Longer timeout (60 seconds)
-    },
-    // Keep the websocket alive with extra options
-    ws: {
-      large_threshold: 250,
-      compress: true,
     }
   });
 
