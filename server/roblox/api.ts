@@ -165,9 +165,9 @@ export async function verifyUserWithCode(username: string, code: string): Promis
     // First try using authenticated method if available
     if (hasRobloxAuth) {
       console.log(`Using authenticated verification for user ${user.id} (${username})`);
-      const isVerified = await verifyUserCodeInProfile(user.id, code);
+      const verificationResult = await verifyUserCodeInProfile(user.id, code);
       
-      if (isVerified) {
+      if (verificationResult.success) {
         return {
           success: true,
           robloxId: user.id.toString()
@@ -175,7 +175,7 @@ export async function verifyUserWithCode(username: string, code: string): Promis
       } else {
         return { 
           success: false, 
-          message: "Verification code not found in your profile. Please make sure you've saved it in your About section and that Roblox didn't filter it out."
+          message: verificationResult.message || "Verification code not found in your profile. Please make sure you've saved it in your About section and that Roblox didn't filter it out."
         };
       }
     }

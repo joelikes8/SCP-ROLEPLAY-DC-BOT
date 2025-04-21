@@ -70,12 +70,23 @@ export async function validateRobloxCookie(): Promise<boolean> {
   }
 }
 
-// Validate cookie on startup
+// Print cookie info
+console.log("ROBLOX_COOKIE environment variable exists:", hasRobloxAuth);
+console.log("ROBLOX_COOKIE length:", hasRobloxAuth ? process.env.ROBLOX_COOKIE?.length || 0 : 0);
+
+// Validate cookie on startup (crucial for ensuring the bot works properly)
 validateRobloxCookie().then(valid => {
   if (valid) {
-    console.log("✅ Roblox authentication is ready");
+    console.log("✅ Roblox authentication is ready and working");
   } else {
     console.warn("⚠️ Roblox authentication is not working, will use public API instead");
+    // Print more information about why
+    if (hasRobloxAuth) {
+      console.warn("The cookie exists but may be invalid, expired, or improperly formatted.");
+      console.warn("Please make sure you've provided a valid .ROBLOSECURITY cookie value.");
+    } else {
+      console.warn("No ROBLOX_COOKIE found in environment variables.");
+    }
   }
 });
 
@@ -197,22 +208,47 @@ export async function getUserDescription(userId: number): Promise<string | null>
 /**
  * Verify if a user has a code in their profile
  */
-export async function verifyUserCodeInProfile(userId: number, code: string): Promise<boolean> {
+export async function verifyUserCodeInProfile(userId: number, code: string): Promise<{ success: boolean, message?: string }> {
   try {
+    console.log(`Verifying code "${code}" in profile for user ID ${userId}`);
+    
     const description = await getUserDescription(userId);
     
     if (!description) {
-      return false;
+      console.error(`Failed to get description for user ${userId} - description is null or empty`);
+      return { 
+        success: false, 
+        message: "Could not retrieve user's profile description. The profile may be empty or inaccessible." 
+      };
     }
+    
+    console.log(`Got profile description for user ${userId}, length: ${description.length}`);
+    console.log(`Profile content excerpt: "${description.substring(0, 50)}${description.length > 50 ? '...' : ''}"`);
     
     // Clean both the description and code for a more flexible match
     const cleanDescription = description.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const cleanCode = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
     
-    return cleanDescription.includes(cleanCode);
+    console.log(`Cleaned code to check: "${cleanCode}"`);
+    
+    const found = cleanDescription.includes(cleanCode);
+    
+    if (found) {
+      console.log(`✅ Successfully found verification code in user ${userId}'s profile`);
+      return { success: true };
+    } else {
+      console.log(`❌ Could not find code "${cleanCode}" in user ${userId}'s profile`);
+      return { 
+        success: false, 
+        message: "Verification code not found in profile. Make sure you've pasted the exact code and saved your profile."
+      };
+    }
   } catch (error) {
     console.error("Error verifying user code:", error);
-    return false;
+    return { 
+      success: false, 
+      message: "An error occurred while checking your profile. Please try again."
+    };
   }
 }
 
