@@ -1,8 +1,33 @@
-import { Client, GatewayIntentBits, Events, REST, Routes } from "discord.js";
+import { Client, GatewayIntentBits, Events, REST, Routes, RESTOptions } from "discord.js";
 import { IStorage } from "../storage";
 import { registerPatrolCommand, handlePatrolInteraction } from "./commands/patrol";
 import { registerVerifyCommand, handleVerifyInteraction } from "./commands/verify";
 import { registerReverifyCommand, handleReverifyInteraction } from "./commands/reverify";
+
+// Custom REST configuration for Render environments
+const getRESTOptions = (): RESTOptions => {
+  const isRender = process.env.RENDER === 'true' || process.env.IS_RENDER === 'true' || !!process.env.RENDER_EXTERNAL_URL;
+  
+  if (isRender) {
+    console.log('Using Render-optimized REST configuration for Discord API');
+    return {
+      version: '10',
+      retries: 5,
+      timeout: 30000,
+      rejectOnRateLimit: null, // Don't reject on rate limits, retry instead
+      headers: {
+        'User-Agent': 'DiscordBot (https://github.com/joelikes8/SCP-ROLEPLAY-DC-BOT, 1.0.0)'
+      }
+    };
+  }
+  
+  // Default configuration for non-Render environments
+  return {
+    version: '10',
+    retries: 3,
+    timeout: 15000
+  };
+};
 
 export async function initializeBot(storage: IStorage, broadcastUpdate: Function) {
   // Check for Discord token
@@ -155,8 +180,12 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
       registerReverifyCommand()
     ];
     
-    // Token is checked at the beginning of the function
-    const rest = new REST({ version: '10' }).setToken(token as string);
+    // Use our optimized REST configuration based on environment
+    const restOptions = getRESTOptions();
+    console.log(`Using REST configuration with retries=${restOptions.retries}, timeout=${restOptions.timeout}ms`);
+    
+    // Configure REST client with optimized settings
+    const rest = new REST(restOptions).setToken(token as string);
     
     try {
       console.log(`Starting to refresh application (/) commands for bot ID: ${clientId}`);
