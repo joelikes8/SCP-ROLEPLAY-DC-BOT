@@ -6,9 +6,9 @@ import { registerReverifyCommand, handleReverifyInteraction } from "./commands/r
 
 export async function initializeBot(storage: IStorage, broadcastUpdate: Function) {
   // Check for Discord token
-  const token = process.env.DISCORD_BOT_TOKEN;
+  const token = process.env.DISCORD_TOKEN;
   if (!token) {
-    console.error("DISCORD_BOT_TOKEN is required. Please add it to your environment variables.");
+    console.error("DISCORD_TOKEN is required. Please add it to your environment variables.");
     return null;
   }
   
