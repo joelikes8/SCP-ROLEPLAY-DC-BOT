@@ -5,18 +5,30 @@ const ROBLOX_API_BASE = "https://api.roblox.com";
 const USERS_API_BASE = "https://users.roblox.com";
 const THUMBNAILS_API_BASE = "https://thumbnails.roblox.com";
 
-// Simple rate limiting
+// Advanced rate limiting
 let lastRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 1000; // 1 second between requests
+const MIN_REQUEST_INTERVAL = 3000; // 3 seconds between requests to avoid rate limiting
+const MAX_RETRIES = 2; // Maximum number of retries for rate limited requests
+const RATE_LIMIT_BACKOFF = 10000; // 10 seconds backoff when rate limited
+
+// Track rate limited responses to implement backoff
+let consecutiveRateLimits = 0;
+let globalCooldownUntil = 0;
 
 /**
- * Helper function to handle rate limiting
+ * Helper function to handle rate limiting with exponential backoff
  */
-async function rateLimitedFetch(url: string, options: any = {}) {
+async function rateLimitedFetch(url: string, options: any = {}, attempt = 0): Promise<any> {
+  // Check if we're in a global cooldown period
   const now = Date.now();
-  const timeSinceLastRequest = now - lastRequestTime;
+  if (now < globalCooldownUntil) {
+    const waitTime = globalCooldownUntil - now;
+    console.log(`In global cooldown. Waiting ${Math.round(waitTime/1000)}s before trying again...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
   
-  // If we've made a request recently, wait before making another
+  // Enforce minimum time between requests
+  const timeSinceLastRequest = now - lastRequestTime;
   if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
     await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
   }
@@ -24,17 +36,52 @@ async function rateLimitedFetch(url: string, options: any = {}) {
   // Update last request time
   lastRequestTime = Date.now();
   
-  // Make the request with default headers
+  // Make the request with improved headers
   const defaultOptions = {
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/json",
-      "User-Agent": "Discord-Bot/1.0"
+      "User-Agent": "Discord-Verification-Bot/1.0",
     },
     ...options
   };
   
-  return fetch(url, defaultOptions);
+  try {
+    const response = await fetch(url, defaultOptions);
+    
+    // Handle rate limiting
+    if (response.status === 429) {
+      consecutiveRateLimits++;
+      
+      // Set a longer global cooldown after multiple consecutive rate limits
+      if (consecutiveRateLimits >= 3) {
+        const cooldownTime = 60000; // 1 minute cooldown
+        console.log(`Multiple rate limits detected. Setting global cooldown for ${cooldownTime/1000}s`);
+        globalCooldownUntil = Date.now() + cooldownTime;
+        consecutiveRateLimits = 0; // Reset after setting cooldown
+        throw new Error(`Roblox API rate limited. Too many consecutive limits, cooling down for ${cooldownTime/1000}s`);
+      }
+      
+      // Retry with backoff if we haven't reached max retries
+      if (attempt < MAX_RETRIES) {
+        const backoff = RATE_LIMIT_BACKOFF * Math.pow(2, attempt);
+        console.log(`Rate limited by Roblox API (attempt ${attempt+1}/${MAX_RETRIES+1}). Backing off for ${backoff/1000}s`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        return rateLimitedFetch(url, options, attempt + 1);
+      } else {
+        console.log(`Maximum retries (${MAX_RETRIES}) reached for rate limited request`);
+        consecutiveRateLimits = 0; // Reset for next operation
+      }
+    } else {
+      // Successful non-429 response, reset consecutive rate limits
+      consecutiveRateLimits = 0;
+    }
+    
+    return response;
+  } catch (error) {
+    console.error(`Error in rateLimitedFetch: ${error}`);
+    throw error;
+  }
 }
 
 /**
@@ -47,13 +94,7 @@ export async function getRobloxUserByUsername(username: string): Promise<{ id: n
       `${USERS_API_BASE}/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
     );
     
-    // Handle rate limiting explicitly
-    if (response.status === 429) {
-      console.log("Rate limited by Roblox API, waiting and retrying...");
-      // Wait 2 seconds and try again
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return getRobloxUserByUsername(username);
-    }
+    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
     
     if (!response.ok) {
       console.error(`Error fetching user: ${response.status} ${response.statusText}`);
@@ -108,13 +149,7 @@ export async function verifyUserWithCode(username: string, code: string): Promis
     // Then, get the user's profile description
     const response = await rateLimitedFetch(`${USERS_API_BASE}/v1/users/${user.id}/description`);
     
-    // Handle rate limiting explicitly
-    if (response.status === 429) {
-      console.log("Rate limited by Roblox API while fetching description, waiting and retrying...");
-      // Wait 2 seconds and try again
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return verifyUserWithCode(username, code);
-    }
+    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
     
     if (!response.ok) {
       return { success: false, message: `Failed to fetch user description: ${response.status} ${response.statusText}` };
@@ -155,13 +190,7 @@ export async function getRobloxAvatar(userId: string): Promise<string | null> {
       `${THUMBNAILS_API_BASE}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`
     );
     
-    // Handle rate limiting explicitly
-    if (response.status === 429) {
-      console.log("Rate limited by Roblox API while fetching avatar, waiting and retrying...");
-      // Wait 2 seconds and try again
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return getRobloxAvatar(userId);
-    }
+    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
     
     if (!response.ok) {
       console.warn(`Could not fetch avatar: ${response.status} ${response.statusText}`);
