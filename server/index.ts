@@ -38,6 +38,21 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Check database connection first
+  try {
+    const { checkDatabaseConnection } = await import("./db");
+    const isConnected = await checkDatabaseConnection();
+    
+    if (!isConnected) {
+      console.warn("⚠️ Could not verify database connection on startup. Will retry during operation.");
+    } else {
+      console.log("✅ Database connection verified on startup");
+    }
+  } catch (err) {
+    console.error("❌ Database check failed:", err);
+    console.warn("⚠️ Continuing startup despite database check failure");
+  }
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
