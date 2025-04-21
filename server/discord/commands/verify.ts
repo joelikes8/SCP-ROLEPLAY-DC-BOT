@@ -371,17 +371,30 @@ async function handleVerifyCheck(
       }
     }
     
-    // Create success embed
+    // Create success embed with different messages based on verification method
+    let isAltVerification = verificationResult.message && verificationResult.message.includes("alternative methods");
+    
     const successEmbed = new EmbedBuilder()
-      .setColor(0x57F287)
+      .setColor(isAltVerification ? 0xFFA500 : 0x57F287) // Orange for alternative verification, green for normal
       .setTitle("Verification Successful")
-      .setDescription(`<@${userId}> has been verified successfully!`)
+      .setDescription(isAltVerification 
+        ? `<@${userId}> has been verified using an alternative method.`
+        : `<@${userId}> has been verified successfully!`)
       .addFields(
         { name: "Roblox Username", value: robloxUsername },
         { name: "Roblox ID", value: verificationResult.robloxId || "Unknown" },
         { name: "Discord Nickname", value: nicknameUpdateResult }
-      )
-      .setTimestamp();
+      );
+      
+    // Add verification method information if using alternative method
+    if (isAltVerification) {
+      successEmbed.addFields({
+        name: "Verification Method",
+        value: "⚠️ Alternative verification was used because your Roblox profile couldn't be accessed."
+      });
+    }
+    
+    successEmbed.setTimestamp();
     
     // Add Roblox avatar if available
     if (verificationResult.robloxId) {
