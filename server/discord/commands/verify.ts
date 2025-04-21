@@ -225,6 +225,24 @@ async function handleVerifyCheck(
       return;
     }
     
+    // Log details for debugging
+    console.log(`Verification check initiated for Discord user ${userId}, Roblox username: ${attempt.robloxUsername}, code: ${attempt.verificationCode}`);
+    
+    // Check Roblox authentication status
+    const { hasRobloxAuth, validateRobloxCookie } = await import('../../roblox/auth');
+    let authMethod = "Public API";
+    
+    if (hasRobloxAuth) {
+      // Test the Roblox cookie before proceeding
+      const valid = await validateRobloxCookie();
+      if (valid) {
+        authMethod = "Authenticated API";
+        console.log(`Using authenticated Roblox API for user ${attempt.robloxUsername}`);
+      } else {
+        console.warn(`Roblox cookie validation failed, falling back to public API for user ${attempt.robloxUsername}`);
+      }
+    }
+    
     // Update user on status
     await interaction.editReply({
       content: `🔍 Checking your Roblox profile for verification code... This might take a moment due to Roblox API limits.`,
@@ -248,16 +266,21 @@ async function handleVerifyCheck(
           });
         }
         
+        console.log(`Verification attempt ${retryCount + 1} for ${robloxUsername} using ${authMethod}`);
         verificationResult = await verifyUserWithCode(robloxUsername, verificationCode);
         
         if (verificationResult.success) {
+          console.log(`✅ Verification successful for ${robloxUsername}`);
           break;
-        } else if (retryCount < maxRetries - 1) {
-          retryCount++;
-          // Wait longer between retries (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
         } else {
-          break;
+          console.log(`❌ Verification failed for ${robloxUsername}: ${verificationResult.message}`);
+          if (retryCount < maxRetries - 1) {
+            retryCount++;
+            // Wait longer between retries (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 3000 * retryCount));
+          } else {
+            break;
+          }
         }
       } catch (err) {
         console.error(`Error on verification retry ${retryCount}:`, err);
@@ -290,8 +313,19 @@ async function handleVerifyCheck(
           .setStyle(ButtonStyle.Danger)
       );
       
+      let errorMessage = verificationResult?.message || "Code not found in your profile after multiple attempts.";
+      
+      // Provide more helpful error messages
+      if (errorMessage.includes("not found in your profile")) {
+        errorMessage += "\n\n__Make sure to:__\n";
+        errorMessage += "• Put the **exact** code in your About section\n";
+        errorMessage += "• **Save** your profile after adding the code\n";
+        errorMessage += "• If the code is getting filtered by Roblox, try adding spaces between characters\n";
+        errorMessage += "• Check that you're verifying the correct Roblox account";
+      }
+      
       await interaction.editReply({
-        content: `❌ Verification failed: ${verificationResult?.message || "Code not found in your profile after multiple attempts."}`,
+        content: `❌ Verification failed: ${errorMessage}`,
         components: [failButtons],
         embeds: []
       });
