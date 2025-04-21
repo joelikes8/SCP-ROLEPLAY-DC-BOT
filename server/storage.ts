@@ -14,7 +14,13 @@ import {
   verificationAttempts
 } from "@shared/schema";
 import { eq, and, or, desc } from "drizzle-orm";
-import { db } from "./db";
+import { db, inMemoryMode } from "./db";
+
+// In-memory storage arrays for fallback mode
+const memoryUsers: User[] = [];
+const memoryDiscordUsers: DiscordUser[] = [];
+const memoryPatrolSessions: PatrolSession[] = [];
+const memoryVerificationAttempts: VerificationAttempt[] = [];
 
 export interface IStorage {
   // User methods
