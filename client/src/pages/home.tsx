@@ -68,7 +68,7 @@ export default function Home() {
 
   // Update active patrols when initial data is loaded
   useEffect(() => {
-    if (initialPatrols) {
+    if (initialPatrols && Array.isArray(initialPatrols)) {
       setActivePatrols(initialPatrols);
     }
   }, [initialPatrols]);

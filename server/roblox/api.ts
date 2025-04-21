@@ -5,19 +5,55 @@ const ROBLOX_API_BASE = "https://api.roblox.com";
 const USERS_API_BASE = "https://users.roblox.com";
 const THUMBNAILS_API_BASE = "https://thumbnails.roblox.com";
 
+// Simple rate limiting
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 1000; // 1 second between requests
+
+/**
+ * Helper function to handle rate limiting
+ */
+async function rateLimitedFetch(url: string, options: any = {}) {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  
+  // If we've made a request recently, wait before making another
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
+  }
+  
+  // Update last request time
+  lastRequestTime = Date.now();
+  
+  // Make the request with default headers
+  const defaultOptions = {
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      "User-Agent": "Discord-Bot/1.0"
+    },
+    ...options
+  };
+  
+  return fetch(url, defaultOptions);
+}
+
 /**
  * Get a Roblox user by username
  */
-export async function getRobloxUserByUsername(username: string): Promise<{ id: number, username: string, avatarUrl?: string } | null> {
+export async function getRobloxUserByUsername(username: string): Promise<{ id: number, username: string, avatarUrl?: string | undefined } | null> {
   try {
     // Make API request to get user
-    const response = await fetch(`${USERS_API_BASE}/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      }
-    });
+    const response = await rateLimitedFetch(
+      `${USERS_API_BASE}/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
+    );
+    
+    // Handle rate limiting explicitly
+    if (response.status === 429) {
+      console.log("Rate limited by Roblox API, waiting and retrying...");
+      // Wait 2 seconds and try again
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return getRobloxUserByUsername(username);
+    }
     
     if (!response.ok) {
       console.error(`Error fetching user: ${response.status} ${response.statusText}`);
@@ -35,8 +71,16 @@ export async function getRobloxUserByUsername(username: string): Promise<{ id: n
       return null;
     }
     
-    // Get avatar URL
-    const avatarUrl = await getRobloxAvatar(user.id);
+    // Get avatar URL, but make it optional - don't let avatar issues prevent verification
+    let avatarUrl: string | undefined = undefined;
+    try {
+      const fetchedAvatar = await getRobloxAvatar(user.id.toString());
+      if (fetchedAvatar) {
+        avatarUrl = fetchedAvatar;
+      }
+    } catch (avatarError) {
+      console.error("Could not fetch avatar, continuing without it:", avatarError);
+    }
     
     return {
       id: user.id,
@@ -62,16 +106,18 @@ export async function verifyUserWithCode(username: string, code: string): Promis
     }
     
     // Then, get the user's profile description
-    const response = await fetch(`${USERS_API_BASE}/v1/users/${user.id}/description`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      }
-    });
+    const response = await rateLimitedFetch(`${USERS_API_BASE}/v1/users/${user.id}/description`);
+    
+    // Handle rate limiting explicitly
+    if (response.status === 429) {
+      console.log("Rate limited by Roblox API while fetching description, waiting and retrying...");
+      // Wait 2 seconds and try again
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return verifyUserWithCode(username, code);
+    }
     
     if (!response.ok) {
-      return { success: false, message: "Failed to fetch user description" };
+      return { success: false, message: `Failed to fetch user description: ${response.status} ${response.statusText}` };
     }
     
     const data = await response.json() as any;
@@ -101,15 +147,20 @@ export async function verifyUserWithCode(username: string, code: string): Promis
  */
 export async function getRobloxAvatar(userId: string): Promise<string | null> {
   try {
-    const response = await fetch(`${THUMBNAILS_API_BASE}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      }
-    });
+    const response = await rateLimitedFetch(
+      `${THUMBNAILS_API_BASE}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`
+    );
+    
+    // Handle rate limiting explicitly
+    if (response.status === 429) {
+      console.log("Rate limited by Roblox API while fetching avatar, waiting and retrying...");
+      // Wait 2 seconds and try again
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return getRobloxAvatar(userId);
+    }
     
     if (!response.ok) {
+      console.warn(`Could not fetch avatar: ${response.status} ${response.statusText}`);
       return null;
     }
     
