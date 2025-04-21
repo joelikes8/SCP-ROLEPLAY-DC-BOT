@@ -17,10 +17,15 @@ export function setupRenderKeepAlive() {
     }));
   });
 
-  // Listen on the port Render provides or fallback to 10000
-  const port = process.env.PORT || 10000;
-  keepAliveServer.listen(port, () => {
-    console.log(`Render keep-alive server running on port ${port}`);
+  // Use a different port for the keep-alive server to avoid conflicts
+  // with the main server which uses process.env.PORT
+  const keepAlivePort = 10000; // Different from the main application port
+  
+  keepAliveServer.listen(keepAlivePort, () => {
+    console.log(`Render keep-alive server running on port ${keepAlivePort}`);
+  }).on('error', (err) => {
+    console.error('Error starting keep-alive server:', err);
+    // Don't crash the main application if the keep-alive server fails
   });
 
   // Set up an interval to ping ourselves every 5 minutes
@@ -41,7 +46,9 @@ export function setupRenderKeepAlive() {
     }
     
     setInterval(() => {
-      const appUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`;
+      // Use the RENDER_EXTERNAL_URL or fallback to the main app port (not the keep-alive port)
+      const mainAppPort = process.env.PORT || 5000;
+      const appUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${mainAppPort}`;
       console.log(`Sending keep-alive ping to ${appUrl}`);
       http.get(appUrl, (res) => {
         console.log(`Self-ping successful: ${res.statusCode}`);

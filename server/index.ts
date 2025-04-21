@@ -60,7 +60,8 @@ app.use((req, res, next) => {
     const message = err.message || "Internal Server Error";
 
     res.status(status).json({ message });
-    throw err;
+    console.error('Error caught by middleware:', err);
+    // Don't throw the error again as it would cause an unhandled rejection
   });
 
   // importantly only setup vite in development and after
@@ -76,6 +77,17 @@ app.use((req, res, next) => {
   // For Render deployment, this will use the PORT environment variable
   // For local Replit deployment, it will use port 5000
   const port = process.env.PORT ? parseInt(process.env.PORT) : 5000;
+  // Add error handling for the server
+  server.on('error', (err: Error & { code?: string }) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Error: Port ${port} is already in use. Choose another port.`);
+    } else {
+      console.error('Server error:', err);
+    }
+    // Exit gracefully to allow the service to restart
+    process.exit(1);
+  });
+
   server.listen({
     port,
     host: "0.0.0.0",
