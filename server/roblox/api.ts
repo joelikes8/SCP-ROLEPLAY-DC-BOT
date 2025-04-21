@@ -89,27 +89,40 @@ async function rateLimitedFetch(url: string, options: any = {}, attempt = 0): Pr
  */
 export async function getRobloxUserByUsername(username: string): Promise<{ id: number, username: string, avatarUrl?: string | undefined } | null> {
   try {
-    // Make API request to get user
-    const response = await rateLimitedFetch(
-      `${USERS_API_BASE}/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
-    );
+    // First, try authenticated method if available
+    const { hasRobloxAuth, searchUserByUsername } = await import('./auth');
     
-    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
-    
-    if (!response.ok) {
-      console.error(`Error fetching user: ${response.status} ${response.statusText}`);
-      return null;
-    }
-    
-    const data = await response.json() as any;
-    
-    // Find exact username match
-    const user = data.data.find((user: any) => 
-      user.name.toLowerCase() === username.toLowerCase()
-    );
-    
-    if (!user) {
-      return null;
+    let user;
+    if (hasRobloxAuth) {
+      console.log(`Using authenticated search for user ${username}`);
+      user = await searchUserByUsername(username);
+      
+      if (!user) {
+        console.log(`No user found with authenticated search for ${username}`);
+        return null;
+      }
+    } else {
+      // Fall back to rate-limited API
+      console.log(`Using public API search (no auth cookie) for user ${username}`);
+      const response = await rateLimitedFetch(
+        `${USERS_API_BASE}/v1/users/search?keyword=${encodeURIComponent(username)}&limit=10`
+      );
+      
+      if (!response.ok) {
+        console.error(`Error fetching user: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      
+      const data = await response.json() as any;
+      
+      // Find exact username match
+      user = data.data.find((u: any) => 
+        u.name.toLowerCase() === username.toLowerCase()
+      );
+      
+      if (!user) {
+        return null;
+      }
     }
     
     // Get avatar URL, but make it optional - don't let avatar issues prevent verification
@@ -125,7 +138,7 @@ export async function getRobloxUserByUsername(username: string): Promise<{ id: n
     
     return {
       id: user.id,
-      username: user.name,
+      username: user.name || username, // Use the name from the response, or fallback to input username
       avatarUrl
     };
   } catch (error) {
@@ -146,10 +159,30 @@ export async function verifyUserWithCode(username: string, code: string): Promis
       return { success: false, message: "User not found" };
     }
     
-    // Then, get the user's profile description
-    const response = await rateLimitedFetch(`${USERS_API_BASE}/v1/users/${user.id}/description`);
+    // Import verification function dynamically to avoid circular dependencies
+    const { hasRobloxAuth, verifyUserCodeInProfile } = await import('./auth');
     
-    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
+    // First try using authenticated method if available
+    if (hasRobloxAuth) {
+      console.log(`Using authenticated verification for user ${user.id} (${username})`);
+      const isVerified = await verifyUserCodeInProfile(user.id, code);
+      
+      if (isVerified) {
+        return {
+          success: true,
+          robloxId: user.id.toString()
+        };
+      } else {
+        return { 
+          success: false, 
+          message: "Verification code not found in your profile. Please make sure you've saved it in your About section and that Roblox didn't filter it out."
+        };
+      }
+    }
+    
+    // Fallback to public API if no authentication is available
+    console.log(`Using public API for verification (no auth cookie) for user ${username}`);
+    const response = await rateLimitedFetch(`${USERS_API_BASE}/v1/users/${user.id}/description`);
     
     if (!response.ok) {
       return { success: false, message: `Failed to fetch user description: ${response.status} ${response.statusText}` };
@@ -186,11 +219,21 @@ export async function verifyUserWithCode(username: string, code: string): Promis
  */
 export async function getRobloxAvatar(userId: string): Promise<string | null> {
   try {
-    const response = await rateLimitedFetch(
-      `${THUMBNAILS_API_BASE}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`
-    );
+    // Try to use authenticated request if available
+    const { hasRobloxAuth, authenticatedFetch } = await import('./auth');
     
-    // No need for explicit rate limit handling here as it's handled in rateLimitedFetch
+    const apiUrl = `${THUMBNAILS_API_BASE}/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`;
+    
+    let response;
+    if (hasRobloxAuth) {
+      // Use authenticated fetch
+      console.log(`Using authenticated fetch for avatar of user ${userId}`);
+      response = await authenticatedFetch(apiUrl);
+    } else {
+      // Fallback to rate-limited fetch
+      console.log(`Using public API for avatar (no auth cookie) for user ${userId}`);
+      response = await rateLimitedFetch(apiUrl);
+    }
     
     if (!response.ok) {
       console.warn(`Could not fetch avatar: ${response.status} ${response.statusText}`);
