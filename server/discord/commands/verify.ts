@@ -359,15 +359,22 @@ async function handleVerifyCheck(
     });
     
     // Try to update nickname
-    let nicknameUpdateResult = "Nickname could not be updated.";
+    let nicknameUpdateResult = "Nickname could not be updated (missing permissions).";
     
     if (interaction.guild) {
       try {
         const member = await interaction.guild.members.fetch(userId);
         await member.setNickname(robloxUsername);
         nicknameUpdateResult = `Updated to ${robloxUsername}`;
-      } catch (error) {
-        console.error("Error updating nickname:", error);
+      } catch (errorObj) {
+        // Discord API error 50013 is "Missing Permissions" which is common and expected
+        // when the bot doesn't have permission to change nicknames
+        const error = errorObj as any; // Cast to any to check for code property
+        if (error && typeof error === 'object' && error.code === 50013) {
+          console.log("Cannot update nickname due to missing permissions - this is normal if bot lacks permission");
+        } else {
+          console.error("Error updating nickname:", error);
+        }
       }
     }
     
@@ -416,30 +423,51 @@ async function handleVerifyCheck(
     });
     
     // Update the message with success
-    await interaction.update({
-      content: "✅ Your Roblox account has been verified successfully!",
-      embeds: [successEmbed],
-      components: []
-    });
+    try {
+      await interaction.update({
+        content: "✅ Your Roblox account has been verified successfully!",
+        embeds: [successEmbed],
+        components: []
+      });
+    } catch (updateError) {
+      // If the interaction was already replied to (which can happen due to race conditions),
+      // try to use followUp instead
+      console.warn("Could not update the interaction, it may have already been replied to:", updateError);
+      try {
+        if (interaction.isButton()) {
+          await interaction.followUp({
+            content: "✅ Your Roblox account has been verified successfully!",
+            ephemeral: true
+          });
+        }
+      } catch (followUpError) {
+        console.error("Could not send follow-up message either:", followUpError);
+      }
+    }
     
   } catch (error) {
     console.error("Error checking verification:", error);
-    await interaction.update({
-      content: "❌ An error occurred while checking your verification. Please try again later.",
-      components: [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(
-          new ButtonBuilder()
-            .setCustomId("verify_check")
-            .setLabel("Try Again")
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId("verify_cancel")
-            .setLabel("Cancel")
-            .setStyle(ButtonStyle.Danger)
-        )
-      ],
-      embeds: []
-    });
+    try {
+      await interaction.update({
+        content: "❌ An error occurred while checking your verification. Please try again later.",
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setCustomId("verify_check")
+              .setLabel("Try Again")
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId("verify_cancel")
+              .setLabel("Cancel")
+              .setStyle(ButtonStyle.Danger)
+          )
+        ],
+        embeds: []
+      });
+    } catch (updateError) {
+      console.warn("Could not update the interaction after error:", updateError);
+      // No need to try followUp here as user would be confused
+    }
   }
 }
 
@@ -449,22 +477,35 @@ async function handleVerifyCancel(
   userId: string,
   storage: IStorage
 ) {
-  // Get the latest verification attempt
-  const attempt = await storage.getLatestVerificationAttempt(userId);
-  
-  if (attempt) {
-    // Just mark that the user saw the cancel message
-    // We don't actually delete the attempt in case they want to try again
-    await interaction.update({
-      content: "❌ Verification cancelled. Use `/verify` to start a new verification process.",
-      components: [],
-      embeds: []
-    });
-  } else {
-    await interaction.update({
-      content: "❌ No verification attempt found. Use `/verify` to start the verification process.",
-      components: [],
-      embeds: []
-    });
+  try {
+    // Get the latest verification attempt
+    const attempt = await storage.getLatestVerificationAttempt(userId);
+    
+    const message = attempt 
+      ? "❌ Verification cancelled. Use `/verify` to start a new verification process."
+      : "❌ No verification attempt found. Use `/verify` to start the verification process.";
+    
+    try {
+      // Try to update the message
+      await interaction.update({
+        content: message,
+        components: [],
+        embeds: []
+      });
+    } catch (updateError) {
+      console.warn("Could not update the cancel interaction:", updateError);
+      
+      // If we couldn't update, try to send a follow-up instead
+      try {
+        await interaction.followUp({
+          content: message,
+          ephemeral: true
+        });
+      } catch (followUpError) {
+        console.error("Could not send follow-up after cancel:", followUpError);
+      }
+    }
+  } catch (error) {
+    console.error("Error handling cancel verification:", error);
   }
 }
