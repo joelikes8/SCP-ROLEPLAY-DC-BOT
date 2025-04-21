@@ -13,7 +13,8 @@ import { getRobloxUserByUsername, verifyUserWithCode, getRobloxAvatar } from "..
 
 // Register verify command
 export function registerVerifyCommand() {
-  return new SlashCommandBuilder()
+  // Create command with simplified structure for better compatibility
+  const command = new SlashCommandBuilder()
     .setName("verify")
     .setDescription("Verify your Roblox account")
     .addStringOption(option =>
@@ -21,8 +22,10 @@ export function registerVerifyCommand() {
         .setName("username")
         .setDescription("Your Roblox username")
         .setRequired(true)
-    )
-    .toJSON();
+    );
+    
+  // Convert to JSON for registration
+  return command.toJSON();
 }
 
 // Handle verify interactions (command and buttons)

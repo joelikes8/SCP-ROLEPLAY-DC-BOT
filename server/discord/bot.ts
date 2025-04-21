@@ -1,31 +1,27 @@
-import { Client, GatewayIntentBits, Events, REST, Routes, RESTOptions } from "discord.js";
+import { Client, GatewayIntentBits, Events, REST, Routes } from "discord.js";
 import { IStorage } from "../storage";
 import { registerPatrolCommand, handlePatrolInteraction } from "./commands/patrol";
 import { registerVerifyCommand, handleVerifyInteraction } from "./commands/verify";
 import { registerReverifyCommand, handleReverifyInteraction } from "./commands/reverify";
 
 // Custom REST configuration for Render environments
-const getRESTOptions = (): RESTOptions => {
+const getRESTOptions = () => {
   const isRender = process.env.RENDER === 'true' || process.env.IS_RENDER === 'true' || !!process.env.RENDER_EXTERNAL_URL;
   
   if (isRender) {
     console.log('Using Render-optimized REST configuration for Discord API');
     return {
-      version: '10',
+      version: '10' as const,
       retries: 5,
       timeout: 30000,
-      rejectOnRateLimit: null, // Don't reject on rate limits, retry instead
-      headers: {
-        'User-Agent': 'DiscordBot (https://github.com/joelikes8/SCP-ROLEPLAY-DC-BOT, 1.0.0)'
-      }
     };
   }
   
   // Default configuration for non-Render environments
   return {
-    version: '10',
+    version: '10' as const,
     retries: 3,
-    timeout: 15000
+    timeout: 15000,
   };
 };
 
@@ -39,6 +35,10 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
   
   // Now token is guaranteed to be a string
 
+  // Get environment-specific REST options
+  const restOptions = getRESTOptions();
+  console.log(`Configuring Discord client with REST options: retries=${restOptions.retries}, timeout=${restOptions.timeout}ms`);
+  
   // Create Discord bot client with necessary intents - minimal permissions required
   const client = new Client({
     intents: [
@@ -46,10 +46,7 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
     ],
     // Adding options to make the bot more resilient
     failIfNotExists: false,
-    rest: {
-      retries: 5, // Number of retries for REST API calls
-      timeout: 60000, // Longer timeout (60 seconds)
-    }
+    rest: restOptions
   });
 
   // Set up auto-reconnection handling
@@ -91,8 +88,9 @@ export async function initializeBot(storage: IStorage, broadcastUpdate: Function
           // Optional: Verify command registration after a short delay
           setTimeout(async () => {
             try {
-              // Fetch registered commands to verify registration
-              const rest = new REST({ version: '10' }).setToken(token as string);
+              // Fetch registered commands to verify registration using our optimized REST config
+              const verifyRestOptions = getRESTOptions();
+              const rest = new REST(verifyRestOptions).setToken(token as string);
               const commands = await rest.get(
                 Routes.applicationCommands(c.user.id)
               ) as any[];

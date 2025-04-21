@@ -12,10 +12,13 @@ import { getRobloxAvatar } from "../../roblox/api";
 
 // Register reverify command
 export function registerReverifyCommand() {
-  return new SlashCommandBuilder()
+  // Create command with simplified structure for better compatibility
+  const command = new SlashCommandBuilder()
     .setName("reverify")
-    .setDescription("Reverify with a different Roblox account")
-    .toJSON();
+    .setDescription("Reverify with a different Roblox account");
+    
+  // Convert to JSON for registration
+  return command.toJSON();
 }
 
 // Handle reverify interactions (command and buttons)

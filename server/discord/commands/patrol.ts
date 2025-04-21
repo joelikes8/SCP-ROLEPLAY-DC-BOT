@@ -14,10 +14,15 @@ import { formatDuration } from "../utils";
 
 // Register patrol command
 export function registerPatrolCommand() {
-  return new SlashCommandBuilder()
+  // Create a simplified command structure for better compatibility
+  // This helps avoid potential issues with complex command structures when deployed
+  const command = new SlashCommandBuilder()
     .setName("patrol")
-    .setDescription("Start or manage your patrol session")
-    .toJSON();
+    .setDescription("Start or manage your patrol session");
+    
+  // Convert to JSON for registration
+  // Using toJSON explicitly ensures compatibility across different environments
+  return command.toJSON();
 }
 
 // Handle patrol interactions (command and buttons)
