@@ -21,5 +21,18 @@ else
   exit 1
 fi
 
+# Create the Render-expected directory structure
+echo "Creating Render directory structure..."
+mkdir -p /opt/render/project/src/dist
+mkdir -p /opt/render/project/src/dist/public
+
+# Copy files to the Render expected location
+echo "Copying files to Render paths..."
+cp dist/index.js /opt/render/project/src/dist/
+if [ -d "dist/public" ]; then
+  cp -r dist/public/* /opt/render/project/src/dist/public/
+  echo "✅ Copied public directory"
+fi
+
 echo "Build process completed successfully."
 echo "To start the application, use 'node --experimental-modules start-on-render.js'"
