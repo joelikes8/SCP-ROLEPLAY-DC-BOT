@@ -8,7 +8,13 @@ import {
   UpdatePatrolSession,
   VerificationAttempt,
   InsertVerificationAttempt,
+  users, 
+  discordUsers, 
+  patrolSessions, 
+  verificationAttempts
 } from "@shared/schema";
+import { eq, and, or, desc } from "drizzle-orm";
+import { db } from "./db";
 
 export interface IStorage {
   // User methods
@@ -36,166 +42,158 @@ export interface IStorage {
   getLatestVerificationAttempt(discordUserId: string): Promise<VerificationAttempt | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private discordUsers: Map<string, DiscordUser>;
-  private patrolSessions: Map<number, PatrolSession>;
-  private verificationAttempts: Map<number, VerificationAttempt>;
-  
-  private userId: number;
-  private discordUserId: number;
-  private patrolSessionId: number;
-  private verificationAttemptId: number;
-
-  constructor() {
-    this.users = new Map();
-    this.discordUsers = new Map();
-    this.patrolSessions = new Map();
-    this.verificationAttempts = new Map();
-    
-    this.userId = 1;
-    this.discordUserId = 1;
-    this.patrolSessionId = 1;
-    this.verificationAttemptId = 1;
-  }
-
-  // User methods
+export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
-  // Discord user methods
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
   async getDiscordUserByDiscordId(discordId: string): Promise<DiscordUser | undefined> {
-    return Array.from(this.discordUsers.values()).find(
-      (user) => user.discordId === discordId
-    );
+    const [user] = await db.select().from(discordUsers).where(eq(discordUsers.discordId, discordId));
+    return user;
   }
 
   async createDiscordUser(insertUser: InsertDiscordUser): Promise<DiscordUser> {
-    const id = this.discordUserId++;
-    const user: DiscordUser = { 
-      ...insertUser, 
-      id, 
-      isVerified: false,
-      verifiedAt: null
-    };
-    this.discordUsers.set(id, user);
+    const [user] = await db
+      .insert(discordUsers)
+      .values(insertUser)
+      .returning();
     return user;
   }
 
   async updateDiscordUser(discordId: string, updates: Partial<DiscordUser>): Promise<DiscordUser | undefined> {
-    const user = await this.getDiscordUserByDiscordId(discordId);
-    if (!user) return undefined;
-    
-    const updatedUser = { ...user, ...updates };
-    this.discordUsers.set(user.id, updatedUser);
+    const [updatedUser] = await db
+      .update(discordUsers)
+      .set(updates)
+      .where(eq(discordUsers.discordId, discordId))
+      .returning();
     return updatedUser;
   }
 
-  // Patrol session methods
   async getActivePatrolSession(discordUserId: string, guildId: string): Promise<PatrolSession | undefined> {
-    return Array.from(this.patrolSessions.values()).find(
-      (session) => 
-        session.discordUserId === discordUserId && 
-        session.discordGuildId === guildId && 
-        (session.status === "on_duty" || session.status === "paused")
-    );
+    const [session] = await db
+      .select()
+      .from(patrolSessions)
+      .where(
+        and(
+          eq(patrolSessions.discordUserId, discordUserId),
+          eq(patrolSessions.discordGuildId, guildId),
+          or(
+            eq(patrolSessions.status, "on_duty"),
+            eq(patrolSessions.status, "paused")
+          )
+        )
+      );
+    return session;
   }
 
   async getAllActivePatrolSessions(guildId: string): Promise<PatrolSession[]> {
-    return Array.from(this.patrolSessions.values()).filter(
-      (session) => 
-        session.discordGuildId === guildId && 
-        (session.status === "on_duty" || session.status === "paused")
-    );
+    return db
+      .select()
+      .from(patrolSessions)
+      .where(
+        and(
+          eq(patrolSessions.discordGuildId, guildId),
+          or(
+            eq(patrolSessions.status, "on_duty"),
+            eq(patrolSessions.status, "paused")
+          )
+        )
+      );
   }
 
   async createPatrolSession(insertSession: InsertPatrolSession): Promise<PatrolSession> {
-    const id = this.patrolSessionId++;
-    const session: PatrolSession = {
-      ...insertSession,
-      id,
-      endTime: null,
-      totalDurationSeconds: null,
-      lastPausedAt: null
-    };
-    this.patrolSessions.set(id, session);
+    const [session] = await db
+      .insert(patrolSessions)
+      .values(insertSession)
+      .returning();
     return session;
   }
 
   async updatePatrolSession(id: number, updates: UpdatePatrolSession): Promise<PatrolSession | undefined> {
-    const session = await this.getPatrolSessionById(id);
-    if (!session) return undefined;
-    
-    const updatedSession = { ...session, ...updates };
-    this.patrolSessions.set(id, updatedSession);
+    const [updatedSession] = await db
+      .update(patrolSessions)
+      .set(updates)
+      .where(eq(patrolSessions.id, id))
+      .returning();
     return updatedSession;
   }
 
   async getPatrolSessionById(id: number): Promise<PatrolSession | undefined> {
-    return this.patrolSessions.get(id);
+    const [session] = await db
+      .select()
+      .from(patrolSessions)
+      .where(eq(patrolSessions.id, id));
+    return session;
   }
 
   async getPatrolSessionHistory(discordUserId: string, guildId: string, limit: number): Promise<PatrolSession[]> {
-    return Array.from(this.patrolSessions.values())
-      .filter(session => 
-        session.discordUserId === discordUserId && 
-        session.discordGuildId === guildId
+    return db
+      .select()
+      .from(patrolSessions)
+      .where(
+        and(
+          eq(patrolSessions.discordUserId, discordUserId),
+          eq(patrolSessions.discordGuildId, guildId),
+          eq(patrolSessions.status, "off_duty")
+        )
       )
-      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-      .slice(0, limit);
+      .orderBy(desc(patrolSessions.endTime))
+      .limit(limit);
   }
 
-  // Verification methods
   async createVerificationAttempt(insertAttempt: InsertVerificationAttempt): Promise<VerificationAttempt> {
-    const id = this.verificationAttemptId++;
-    const attempt: VerificationAttempt = {
-      ...insertAttempt,
-      id,
-      verifiedAt: null,
-      isVerified: false
-    };
-    this.verificationAttempts.set(id, attempt);
+    const [attempt] = await db
+      .insert(verificationAttempts)
+      .values(insertAttempt)
+      .returning();
     return attempt;
   }
 
   async getVerificationAttempt(discordUserId: string, code: string): Promise<VerificationAttempt | undefined> {
-    return Array.from(this.verificationAttempts.values()).find(
-      (attempt) => 
-        attempt.discordUserId === discordUserId && 
-        attempt.verificationCode === code
-    );
+    const [attempt] = await db
+      .select()
+      .from(verificationAttempts)
+      .where(
+        and(
+          eq(verificationAttempts.discordUserId, discordUserId),
+          eq(verificationAttempts.verificationCode, code)
+        )
+      );
+    return attempt;
   }
 
   async updateVerificationAttempt(id: number, updates: Partial<VerificationAttempt>): Promise<VerificationAttempt | undefined> {
-    const attempt = this.verificationAttempts.get(id);
-    if (!attempt) return undefined;
-    
-    const updatedAttempt = { ...attempt, ...updates };
-    this.verificationAttempts.set(id, updatedAttempt);
+    const [updatedAttempt] = await db
+      .update(verificationAttempts)
+      .set(updates)
+      .where(eq(verificationAttempts.id, id))
+      .returning();
     return updatedAttempt;
   }
 
   async getLatestVerificationAttempt(discordUserId: string): Promise<VerificationAttempt | undefined> {
-    const attempts = Array.from(this.verificationAttempts.values())
-      .filter(attempt => attempt.discordUserId === discordUserId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
-    return attempts.length > 0 ? attempts[0] : undefined;
+    const [attempt] = await db
+      .select()
+      .from(verificationAttempts)
+      .where(eq(verificationAttempts.discordUserId, discordUserId))
+      .orderBy(desc(verificationAttempts.createdAt))
+      .limit(1);
+    return attempt;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
